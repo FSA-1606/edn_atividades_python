@@ -1,4 +1,4 @@
-EDN IA - Turma-173 - Atividades Python.
+EDN IA - Turma - 173 - Atividades Python.
 
 Este repositório contém atividades relacionadas à conceitos iniciais em Python.
 
