@@ -292,7 +292,7 @@ def optimize_route(user_id):
     # Clustering com K-Means
     coords = np.array([(d[1], d[2]) for d in doadores])
     num_doadores = len(doadores)
-    num_clusters = max(2, min(num_doadores, 5))  # Mínimo de 2 e máximo de 5 clusters
+    num_clusters = max(2, min(num_doadores // 2, 3))  # Máximo de 3 ou metade dos doadores
     if num_doadores < 2:
         flash('Pelo menos 2 doadores com localização são necessários para otimizar a rota.', 'error')
         return redirect(url_for('dashboard', user_id=user_id))
