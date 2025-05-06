@@ -8,3 +8,6 @@ Estrutura do Projeto:
 - Foram criados dois programas em python para validações e condicionais.
 - Aula_02: Descrição do conteúdo da segunda aula.
 - Foram criados seis programas em python com validações e condicionais.
+- Aula_03: Descrição do conteúdo da terceira aula.
+- Foi criado uma calculadora simples em python com validações e condicionais.
+
