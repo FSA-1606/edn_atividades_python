@@ -10,4 +10,4 @@ Um aplicativo web baseado em Flask para conectar doadores e coletores de materia
 ## Estrutura de Pastas
 - `app.py`: Lógica principal da aplicação.
 - `templates/`: Modelos HTML.
-- `static/`: Arquivos estáticos (CSS/JS).
+- `static/`: Arquivos estáticos (CSS/JS).(Opcional)

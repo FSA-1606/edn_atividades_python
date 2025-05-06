@@ -1,57 +1,59 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-br">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Atualizar Localização</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { padding-top: 20px; background-color: #f8f9fa; }
+        .container { max-width: 500px; }
+        .btn { margin: 5px; }
+    </style>
 </head>
-<body class="bg-gray-100">
-    <div class="container mx-auto p-4">
-        <h1 class="text-2xl font-bold mb-4">Atualizar Localização</h1>
+<body>
+    <div class="container">
+        <h2>Atualizar Localização</h2>
+
+        <!-- Exibir mensagens flash -->
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}
-                    <div class="bg-{{ 'green' if category == 'success' else 'blue' if category == 'info' else 'red' }}-100 p-2 mb-4">{{ message }}</div>
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
                 {% endfor %}
             {% endif %}
         {% endwith %}
-        <form method="POST" class="space-y-4">
-            <div class="flex space-x-2">
-                <input type="number" step="any" name="latitude" id="latitude" placeholder="Latitude" value="{{ user[4] if user[4] is not none else '' }}" class="border p-2 w-full" required>
-                <input type="number" step="any" name="longitude" id="longitude" placeholder="Longitude" value="{{ user[5] if user[5] is not none else '' }}" class="border p-2 w-full" required>
+
+        <form method="POST">
+            <div class="mb-3">
+                <label for="latitude" class="form-label">Latitude</label>
+                <input type="text" class="form-control" id="latitude" name="latitude" value="{{ user[4] if user[4] is not none else '' }}" required>
             </div>
-            <button type="button" onclick="getLocation()" class="bg-yellow-500 text-white px-4 py-2 rounded">Obter Minha Localização</button>
-            <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded">Atualizar Localização</button>
+            <div class="mb-3">
+                <label for="longitude" class="form-label">Longitude</label>
+                <input type="text" class="form-control" id="longitude" name="longitude" value="{{ user[5] if user[5] is not none else '' }}" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Salvar Localização</button>
+            <button type="button" class="btn btn-secondary" onclick="getLocation()">Obter Minha Localização</button>
+            <a href="{{ url_for('dashboard', user_id=user[0]) }}" class="btn btn-secondary">Voltar</a>
         </form>
-        <a href="{{ url_for('dashboard', user_id=user[0]) }}" class="bg-blue-500 text-white px-4 py-2 rounded mt-4">Voltar</a>
     </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         function getLocation() {
             if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(showPosition, showError);
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    document.getElementById('latitude').value = position.coords.latitude;
+                    document.getElementById('longitude').value = position.coords.longitude;
+                }, function(error) {
+                    alert("Erro ao obter localização: " + error.message);
+                });
             } else {
                 alert("Geolocalização não é suportada pelo seu navegador.");
-            }
-        }
-
-        function showPosition(position) {
-            document.getElementById("latitude").value = position.coords.latitude;
-            document.getElementById("longitude").value = position.coords.longitude;
-        }
-
-        function showError(error) {
-            switch(error.code) {
-                case error.PERMISSION_DENIED:
-                    alert("Permissão para acessar a localização foi negada. Por favor, permita o acesso ou insira as coordenadas manualmente.");
-                    break;
-                case error.POSITION_UNAVAILABLE:
-                    alert("Informações de localização indisponíveis.");
-                    break;
-                case error.TIMEOUT:
-                    alert("A solicitação de localização expirou.");
-                    break;
-                case error.UNKNOWN_ERROR:
-                    alert("Ocorreu um erro desconhecido ao obter a localização.");
-                    break;
             }
         }
     </script>
