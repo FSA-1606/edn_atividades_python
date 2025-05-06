@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Plataforma de Doação</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4">
+        <h1 class="text-3xl font-bold mb-4">Plataforma de Doação de Material Reciclável</h1>
+        <p class="mb-4">Bem-vindo! Conecte-se como doador ou coletor para começar.</p>
+        <a href="{{ url_for('register') }}" class="bg-blue-500 text-white px-4 py-2 rounded">Registrar</a>
+        <a href="{{ url_for('login') }}" class="bg-green-500 text-white px-4 py-2 rounded">Entrar</a>
+    </div>
+</body>
+</html>
