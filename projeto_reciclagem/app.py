@@ -1,9 +1,11 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_bcrypt import Bcrypt
 import sqlite3
 import json
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
+from sklearn.cluster import KMeans
+import numpy as np
 
 app = Flask(__name__)
 app.secret_key = 'sua_chave_secreta'
@@ -34,6 +36,8 @@ init_db()
 # Rota inicial
 @app.route('/')
 def index():
+    if 'user_id' in session:
+        return redirect(url_for('dashboard', user_id=session['user_id']))
     return render_template('index.html')
 
 # Rota de registro
@@ -58,7 +62,7 @@ def register():
             c.execute('INSERT INTO users (username, password, role, latitude, longitude) VALUES (?, ?, ?, ?, ?)',
                       (username, hashed_password, role, latitude, longitude))
             conn.commit()
-            flash('Registro concluído com sucesso!', 'success')
+            flash('Registro concluído com sucesso! Por favor, adicione sua localização para melhor experiência.', 'info')
             return redirect(url_for('login'))
         except sqlite3.IntegrityError:
             flash('Nome de usuário já existe!', 'error')
@@ -78,15 +82,29 @@ def login():
         user = c.fetchone()
         conn.close()
         if user and bcrypt.check_password_hash(user[2], password):
+            session['user_id'] = user[0]  # Armazena o user_id na sessão
+            if user[4] is None or user[5] is None:
+                flash('Sua localização não foi informada. Atualize-a no painel para otimizar rotas.', 'info')
             flash('Login realizado com sucesso!', 'success')
             return redirect(url_for('dashboard', user_id=user[0]))
         else:
             flash('Credenciais inválidas!', 'error')
     return render_template('login.html')
 
+# Rota de logout
+@app.route('/logout')
+def logout():
+    session.pop('user_id', None)  # Remove o user_id da sessão
+    flash('Você saiu com sucesso!', 'success')
+    return redirect(url_for('index'))
+
 # Rota do painel
 @app.route('/dashboard/<int:user_id>')
 def dashboard(user_id):
+    if 'user_id' not in session or session['user_id'] != user_id:
+        flash('Por favor, faça login para acessar o painel.', 'error')
+        return redirect(url_for('login'))
+
     conn = sqlite3.connect('recyclable_platform.db')
     c = conn.cursor()
     c.execute('SELECT * FROM users WHERE id = ?', (user_id,))
@@ -100,16 +118,105 @@ def dashboard(user_id):
     
     # Busca doadores próximos se o usuário for coletor
     doadores = []
+    doadores_sem_localizacao = []
     if user[3] == 'coletor':
         c.execute('SELECT id, username, latitude, longitude FROM users WHERE role = "doador" AND latitude IS NOT NULL AND longitude IS NOT NULL')
         doadores = c.fetchall()
+        c.execute('SELECT id, username FROM users WHERE role = "doador" AND (latitude IS NULL OR longitude IS NULL)')
+        doadores_sem_localizacao = c.fetchall()
     
     conn.close()
-    return render_template('dashboard.html', user=user, materials=materials, doadores=doadores)
+    return render_template('dashboard.html', user=user, materials=materials, doadores=doadores, doadores_sem_localizacao=doadores_sem_localizacao)
+
+# Rota para atualizar localização
+@app.route('/update_location/<int:user_id>', methods=['GET', 'POST'])
+def update_location(user_id):
+    if 'user_id' not in session or session['user_id'] != user_id:
+        flash('Por favor, faça login para atualizar sua localização.', 'error')
+        return redirect(url_for('login'))
+
+    conn = sqlite3.connect('recyclable_platform.db')
+    c = conn.cursor()
+    c.execute('SELECT * FROM users WHERE id = ?', (user_id,))
+    user = c.fetchone()
+
+    if request.method == 'POST':
+        latitude = float(request.form['latitude']) if request.form['latitude'] else None
+        longitude = float(request.form['longitude']) if request.form['longitude'] else None
+
+        if latitude is None or longitude is None:
+            flash('Por favor, informe latitude e longitude válidas.', 'error')
+        else:
+            c.execute('UPDATE users SET latitude = ?, longitude = ? WHERE id = ?', (latitude, longitude, user_id))
+            conn.commit()
+            flash('Localização atualizada com sucesso!', 'success')
+            return redirect(url_for('dashboard', user_id=user_id))
+
+    conn.close()
+    return render_template('update_location.html', user=user)
+
+# Rota para remover material (apenas para doadores)
+@app.route('/remove_material/<int:user_id>/<int:material_id>', methods=['POST'])
+def remove_material(user_id, material_id):
+    if 'user_id' not in session or session['user_id'] != user_id:
+        flash('Por favor, faça login para remover materiais.', 'error')
+        return redirect(url_for('login'))
+
+    conn = sqlite3.connect('recyclable_platform.db')
+    c = conn.cursor()
+    c.execute('SELECT role FROM users WHERE id = ?', (user_id,))
+    user = c.fetchone()
+    
+    if user[0] != 'doador':
+        flash('Apenas doadores podem remover materiais.', 'error')
+        conn.close()
+        return redirect(url_for('dashboard', user_id=user_id))
+
+    c.execute('DELETE FROM materials WHERE id = ? AND user_id = ?', (material_id, user_id))
+    conn.commit()
+    conn.close()
+    flash('Material removido com sucesso!', 'success')
+    return redirect(url_for('dashboard', user_id=user_id))
+
+# Rota para visualizar detalhes de um doador (apenas para coletores)
+@app.route('/doador_details/<int:user_id>/<int:doador_id>')
+def doador_details(user_id, doador_id):
+    if 'user_id' not in session or session['user_id'] != user_id:
+        flash('Por favor, faça login para visualizar detalhes.', 'error')
+        return redirect(url_for('login'))
+
+    conn = sqlite3.connect('recyclable_platform.db')
+    c = conn.cursor()
+    c.execute('SELECT role FROM users WHERE id = ?', (user_id,))
+    user = c.fetchone()
+    
+    if user[0] != 'coletor':
+        flash('Apenas coletores podem visualizar detalhes de doadores.', 'error')
+        conn.close()
+        return redirect(url_for('dashboard', user_id=user_id))
+
+    # Busca informações do doador
+    c.execute('SELECT username, latitude, longitude FROM users WHERE id = ?', (doador_id,))
+    doador = c.fetchone()
+    if not doador:
+        flash('Doador não encontrado.', 'error')
+        conn.close()
+        return redirect(url_for('dashboard', user_id=user_id))
+
+    # Busca materiais do doador
+    c.execute('SELECT material_type, quantity FROM materials WHERE user_id = ?', (doador_id,))
+    materiais = c.fetchall()
+    conn.close()
+    
+    return render_template('doador_details.html', doador=doador, materiais=materiais, user_id=user_id)
 
 # Rota para adicionar material
 @app.route('/add_material/<int:user_id>', methods=['GET', 'POST'])
 def add_material(user_id):
+    if 'user_id' not in session or session['user_id'] != user_id:
+        flash('Por favor, faça login para adicionar materiais.', 'error')
+        return redirect(url_for('login'))
+
     if request.method == 'POST':
         material_type = request.form['material_type']
         try:
@@ -133,6 +240,10 @@ def add_material(user_id):
 # Rota do mapa
 @app.route('/map/<int:user_id>')
 def show_map(user_id):
+    if 'user_id' not in session or session['user_id'] != user_id:
+        flash('Por favor, faça login para visualizar o mapa.', 'error')
+        return redirect(url_for('login'))
+
     conn = sqlite3.connect('recyclable_platform.db')
     c = conn.cursor()
     c.execute('SELECT id, username, latitude, longitude, role FROM users WHERE latitude IS NOT NULL AND longitude IS NOT NULL')
@@ -159,9 +270,13 @@ def show_map(user_id):
     }
     return render_template('map.html', geojson_data=json.dumps(geojson_data), user_id=user_id)
 
-# Otimização de rota
+# Otimização de rota com clustering
 @app.route('/optimize_route/<int:user_id>')
 def optimize_route(user_id):
+    if 'user_id' not in session or session['user_id'] != user_id:
+        flash('Por favor, faça login para otimizar a rota.', 'error')
+        return redirect(url_for('login'))
+
     conn = sqlite3.connect('recyclable_platform.db')
     c = conn.cursor()
     c.execute('SELECT id, latitude, longitude FROM users WHERE role = "doador" AND latitude IS NOT NULL AND longitude IS NOT NULL')
@@ -171,43 +286,73 @@ def optimize_route(user_id):
     conn.close()
 
     if not doadores or not coletor:
-        flash('Dados de localização insuficientes para otimização de rota.', 'error')
+        flash('Dados de localização insuficientes para otimização de rota. Peça aos doadores para atualizarem suas localizações no painel.', 'error')
         return redirect(url_for('dashboard', user_id=user_id))
 
-    # Matriz de distâncias simples (distância euclidiana para demonstração)
-    locations = [(coletor[0], coletor[1])] + [(d[1], d[2]) for d in doadores]
-    n = len(locations)
-    distance_matrix = [[0] * n for _ in range(n)]
-    for i in range(n):
-        for j in range(n):
-            if i != j:
-                lat1, lon1 = locations[i]
-                lat2, lon2 = locations[j]
-                distance_matrix[i][j] = int(((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2) ** 0.5 * 100000)  # Aprox. em metros
+    # Clustering com K-Means
+    coords = np.array([(d[1], d[2]) for d in doadores])
+    num_doadores = len(doadores)
+    num_clusters = max(2, min(num_doadores, 5))  # Mínimo de 2 e máximo de 5 clusters
+    if num_doadores < 2:
+        flash('Pelo menos 2 doadores com localização são necessários para otimizar a rota.', 'error')
+        return redirect(url_for('dashboard', user_id=user_id))
 
-    # Solucionador TSP do OR-Tools
-    manager = pywrapcp.RoutingIndexManager(n, 1, 0)
-    routing = pywrapcp.RoutingModel(manager)
+    kmeans = KMeans(n_clusters=num_clusters, random_state=0).fit(coords)
+    labels = kmeans.labels_
+    centroids = kmeans.cluster_centers_
 
-    def distance_callback(from_index, to_index):
-        from_node = manager.IndexToNode(from_index)
-        to_node = manager.IndexToNode(to_index)
-        return distance_matrix[from_node][to_node]
+    # Agrupa doadores por cluster
+    clustered_doadores = [[] for _ in range(num_clusters)]
+    for idx, label in enumerate(labels):
+        clustered_doadores[label].append(doadores[idx])
 
-    transit_callback_index = routing.RegisterTransitCallback(distance_callback)
-    routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
-    search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-    search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
-    solution = routing.SolveWithParameters(search_parameters)
+    # Calcula a rota para cada cluster (usando os centroides)
+    routes = []
+    for cluster_idx, cluster in enumerate(clustered_doadores):
+        if not cluster:
+            continue
 
-    if solution:
-        route = []
-        index = routing.Start(0)
-        while not routing.IsEnd(index):
-            node = manager.IndexToNode(index)
-            if node != 0:  # Ignora o ponto inicial
-                route.append(doadores[node-1][0])  # ID do usuário
-        flash(f'Rota otimizada: Visite doadores com IDs {route}', 'success')
+        # Usa o centroide do cluster como ponto representativo
+        cluster_coords = [(centroids[cluster_idx][0], centroids[cluster_idx][1])]
+        cluster_coords.extend([(d[1], d[2]) for d in cluster])
+
+        # Matriz de distâncias
+        n = len(cluster_coords)
+        distance_matrix = [[0] * n for _ in range(n)]
+        for i in range(n):
+            for j in range(n):
+                if i != j:
+                    lat1, lon1 = cluster_coords[i]
+                    lat2, lon2 = cluster_coords[j]
+                    distance_matrix[i][j] = int(((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2) ** 0.5 * 100000)
+
+        # Solucionador TSP do OR-Tools
+        manager = pywrapcp.RoutingIndexManager(n, 1, 0)
+        routing = pywrapcp.RoutingModel(manager)
+
+        def distance_callback(from_index, to_index):
+            from_node = manager.IndexToNode(from_index)
+            to_node = manager.IndexToNode(to_index)
+            return distance_matrix[from_node][to_node]
+
+        transit_callback_index = routing.RegisterTransitCallback(distance_callback)
+        routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
+        search_parameters = pywrapcp.DefaultRoutingSearchParameters()
+        search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+        solution = routing.SolveWithParameters(search_parameters)
+
+        if solution:
+            route = []
+            index = routing.Start(0)
+            while not routing.IsEnd(index):
+                node = manager.IndexToNode(index)
+                if node != 0:  # Ignora o ponto inicial (centroide)
+                    route.append(cluster[node-1][0])  # ID do doador
+                index = solution.Value(routing.NextVar(index))
+            routes.append(route)
+
+    if routes:
+        flash(f'Rota otimizada por clusters: {routes}', 'success')
     else:
         flash('Não foi possível calcular a rota.', 'error')
     

@@ -3,3 +3,4 @@ werkzeug==2.3.8
 folium==0.17.0
 flask-bcrypt==1.0.1
 ortools==9.12.4544
+scikit-learn==1.6.1

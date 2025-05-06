@@ -1,15 +1,61 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Plataforma de Doação</title>
+    <title>Painel</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-100">
     <div class="container mx-auto p-4">
-        <h1 class="text-3xl font-bold mb-4">Plataforma de Doação de Material Reciclável</h1>
-        <p class="mb-4">Bem-vindo! Conecte-se como doador ou coletor para começar.</p>
-        <a href="{{ url_for('register') }}" class="bg-blue-500 text-white px-4 py-2 rounded">Registrar</a>
-        <a href="{{ url_for('login') }}" class="bg-green-500 text-white px-4 py-2 rounded">Entrar</a>
+        <div class="flex justify-between items-center mb-4">
+            <h1 class="text-2xl font-bold">Bem-vindo, {{ user[1] }} ({{ user[3] }})</h1>
+            <a href="{{ url_for('logout') }}" class="bg-red-500 text-white px-4 py-2 rounded">Sair</a>
+        </div>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="bg-{{ 'green' if category == 'success' else 'blue' if category == 'info' else 'red' }}-100 p-2 mb-4">{{ message|safe }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        {% if user[3] == 'doador' %}
+            <h2 class="text-xl mb-2">Seus Materiais</h2>
+            <ul class="mb-4">
+                {% for material in materials %}
+                    <li class="flex justify-between items-center">
+                        <span>{{ material[2] }} - Quantidade: {{ material[3] }}</span>
+                        <form method="POST" action="{{ url_for('remove_material', user_id=user[0], material_id=material[0]) }}">
+                            <button type="submit" class="bg-red-500 text-white px-2 py-1 rounded text-sm">Remover</button>
+                        </form>
+                    </li>
+                {% endfor %}
+            </ul>
+            <a href="{{ url_for('add_material', user_id=user[0]) }}" class="bg-blue-500 text-white px-4 py-2 rounded mb-4">Adicionar Material</a>
+            <h2 class="text-xl mb-2">Atualizar Localização</h2>
+            <a href="{{ url_for('update_location', user_id=user[0]) }}" class="bg-green-500 text-white px-4 py-2 rounded mb-4">Editar Localização</a>
+        {% else %}
+            <h2 class="text-xl mb-2">Doadores Próximos</h2>
+            <ul class="mb-4">
+                {% for doador in doadores %}
+                    <li class="flex justify-between items-center">
+                        <span>{{ doador[1] }} - Localização: ({{ doador[2] }}, {{ doador[3] }})</span>
+                        <a href="{{ url_for('doador_details', user_id=user[0], doador_id=doador[0]) }}" class="bg-blue-500 text-white px-2 py-1 rounded text-sm">Ver Detalhes</a>
+                    </li>
+                {% endfor %}
+            </ul>
+            <h2 class="text-xl mb-2">Doadores Sem Localização</h2>
+            {% if doadores_sem_localizacao %}
+                <ul class="mb-4">
+                    {% for doador in doadores_sem_localizacao %}
+                        <li>{{ doador[1] }} - Localização não informada</li>
+                    {% endfor %}
+                </ul>
+                <p class="mb-4">Peça a esses doadores que atualizem suas localizações no painel deles para que você possa otimizar a rota.</p>
+            {% else %}
+                <p class="mb-4">Todos os doadores informaram suas localizações.</p>
+            {% endif %}
+            <a href="{{ url_for('optimize_route', user_id=user[0]) }}" class="bg-green-500 text-white px-4 py-2 rounded">Otimizar Rota</a>
+        {% endif %}
+        <a href="{{ url_for('show_map', user_id=user[0]) }}" class="bg-purple-500 text-white px-4 py-2 rounded ml-2">Ver Mapa</a>
     </div>
 </body>
 </html>
