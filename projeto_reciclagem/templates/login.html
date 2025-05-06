@@ -1,25 +1,51 @@
 <!DOCTYPE html>
-       <html>
-       <head>
-           <title>Entrar</title>
-           <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-       </head>
-       <body class="bg-gray-100">
-           <div class="container mx-auto p-4">
-               <h1 class="text-2xl font-bold mb-4">Entrar</h1>
-               {% with messages = get_flashed_messages(with_categories=true) %}
-                   {% if messages %}
-                       {% for category, message in messages %}
-                           <div class="bg-{{ 'green' if category == 'success' else 'red' }}-100 p-2 mb-4">{{ message }}</div>
-                       {% endfor %}
-                   {% endif %}
-               {% endwith %}
-               <form method="POST" class="space-y-4">
-                   <input type="text" name="username" placeholder="Nome de usuário" class="border p-2 w-full" required>
-                   <input type="password" name="password" placeholder="Senha" class="border p-2 w-full" required>
-                   <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded">Entrar</button>
-               </form>
-               <a href="{{ url_for('register') }}" class="text-blue-500">Não tem uma conta? Registre-se</a>
-           </div>
-       </body>
-       </html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
+        <h1 class="text-3xl font-bold text-center mb-6 text-gray-800">Login</h1>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="bg-{{ 'green' if category == 'success' else 'blue' if category == 'info' else 'red' }}-100 text-{{ 'green' if category == 'success' else 'blue' if category == 'info' else 'red' }}-800 p-3 rounded mb-4 text-center">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST" action="{{ url_for('login') }}" class="space-y-4">
+            <div>
+                <label for="username" class="block text-sm font-medium text-gray-700">Usuário:</label>
+                <input type="text" id="username" name="username" required class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+                <label for="password" class="block text-sm font-medium text-gray-700">Senha:</label>
+                <input type="password" id="password" name="password" required class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition duration-200 font-semibold">
+                Entrar
+            </button>
+        </form>
+
+        <div class="mt-4 text-center space-y-2">
+            <a href="{{ url_for('reset_password') }}" class="block text-blue-500 hover:underline">
+                <i class="fas fa-key mr-1"></i> Esqueci minha senha
+            </a>
+            <a href="{{ url_for('login_google') }}" class="block bg-white text-gray-700 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 transition duration-200 font-semibold">
+                <i class="fab fa-google mr-2"></i> Login com Google
+            </a>
+            <p class="text-gray-600">Não tem conta? 
+                <a href="{{ url_for('register') }}" class="text-blue-500 hover:underline font-semibold">Registre-se</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

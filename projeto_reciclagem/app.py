@@ -6,10 +6,25 @@ from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
 from sklearn.cluster import KMeans
 import numpy as np
+from authlib.integrations.flask_client import OAuth
+import secrets
 
 app = Flask(__name__)
 app.secret_key = 'sua_chave_secreta'
 bcrypt = Bcrypt(app)
+
+# Configuração do OAuth para Google
+oauth = OAuth(app)
+google = oauth.register(
+    name='google',
+    client_id='SEU_GOOGLE_CLIENT_ID',  # Substitua pelo Client ID do Google
+    client_secret='SEU_GOOGLE_CLIENT_SECRET',  # Substitua pelo Client Secret do Google
+    authorize_url='https://accounts.google.com/o/oauth2/auth',
+    access_token_url='https://accounts.google.com/o/oauth2/token',
+    redirect_uri='http://localhost:5000/login/google/callback',
+    client_kwargs={'scope': 'email profile'},
+    jwks_uri='https://www.googleapis.com/oauth2/v3/certs',
+)
 
 # Inicializa o banco de dados SQLite
 def init_db():
@@ -18,10 +33,11 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT UNIQUE NOT NULL,
-                    password TEXT NOT NULL,
+                    password TEXT,
                     role TEXT NOT NULL,
                     latitude REAL,
-                    longitude REAL)''')
+                    longitude REAL,
+                    google_id TEXT UNIQUE)''')
     c.execute('''CREATE TABLE IF NOT EXISTS materials (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER,
@@ -50,7 +66,6 @@ def register():
         latitude = float(request.form['latitude']) if request.form['latitude'] else None
         longitude = float(request.form['longitude']) if request.form['longitude'] else None
 
-        # Valida entradas
         if not username or len(password) < 6:
             flash('Nome de usuário é obrigatório e a senha deve ter pelo menos 6 caracteres.', 'error')
             return render_template('register.html')
@@ -81,8 +96,8 @@ def login():
         c.execute('SELECT * FROM users WHERE username = ?', (username,))
         user = c.fetchone()
         conn.close()
-        if user and bcrypt.check_password_hash(user[2], password):
-            session['user_id'] = user[0]  # Armazena o user_id na sessão
+        if user and user[2] and bcrypt.check_password_hash(user[2], password):
+            session['user_id'] = user[0]
             if user[4] is None or user[5] is None:
                 flash('Sua localização não foi informada. Atualize-a no painel para otimizar rotas.', 'info')
             flash('Login realizado com sucesso!', 'success')
@@ -91,10 +106,79 @@ def login():
             flash('Credenciais inválidas!', 'error')
     return render_template('login.html')
 
+# Rota de login com Google
+@app.route('/login/google')
+def login_google():
+    redirect_uri = url_for('login_google_callback', _external=True)
+    return google.authorize_redirect(redirect_uri)
+
+# Callback do Google OAuth
+@app.route('/login/google/callback')
+def login_google_callback():
+    token = google.authorize_access_token()
+    user_info = google.parse_id_token(token)
+    google_id = user_info['sub']
+    email = user_info['email']
+
+    conn = sqlite3.connect('recyclable_platform.db')
+    c = conn.cursor()
+    c.execute('SELECT * FROM users WHERE google_id = ? OR username = ?', (google_id, email))
+    user = c.fetchone()
+
+    if user:
+        session['user_id'] = user[0]
+        flash('Login com Google realizado com sucesso!', 'success')
+    else:
+        # Criar um novo usuário
+        username = email
+        role = 'doador'  # Papel padrão para novos usuários via Google
+        try:
+            c.execute('INSERT INTO users (username, role, google_id) VALUES (?, ?, ?)',
+                      (username, role, google_id))
+            conn.commit()
+            c.execute('SELECT * FROM users WHERE google_id = ?', (google_id,))
+            user = c.fetchone()
+            session['user_id'] = user[0]
+            flash('Conta criada e login realizado com sucesso via Google!', 'success')
+        except sqlite3.IntegrityError:
+            flash('Erro ao criar conta com Google. Tente outro método de login.', 'error')
+            return redirect(url_for('login'))
+
+    conn.close()
+    return redirect(url_for('dashboard', user_id=session['user_id']))
+
+# Rota para redefinir senha
+@app.route('/reset_password', methods=['GET', 'POST'])
+def reset_password():
+    if request.method == 'POST':
+        username = request.form['username']
+        new_password = request.form['new_password']
+        
+        if len(new_password) < 6:
+            flash('A nova senha deve ter pelo menos 6 caracteres.', 'error')
+            return render_template('reset_password.html')
+
+        conn = sqlite3.connect('recyclable_platform.db')
+        c = conn.cursor()
+        c.execute('SELECT * FROM users WHERE username = ?', (username,))
+        user = c.fetchone()
+        
+        if user:
+            hashed_password = bcrypt.generate_password_hash(new_password).decode('utf-8')
+            c.execute('UPDATE users SET password = ? WHERE username = ?', (hashed_password, username))
+            conn.commit()
+            flash(f'Senha redefinida com sucesso! Sua nova senha é: {new_password}', 'success')
+            return redirect(url_for('login'))
+        else:
+            flash('Usuário não encontrado!', 'error')
+        
+        conn.close()
+    return render_template('reset_password.html')
+
 # Rota de logout
 @app.route('/logout')
 def logout():
-    session.pop('user_id', None)  # Remove o user_id da sessão
+    session.pop('user_id', None)
     flash('Você saiu com sucesso!', 'success')
     return redirect(url_for('index'))
 
@@ -110,13 +194,11 @@ def dashboard(user_id):
     c.execute('SELECT * FROM users WHERE id = ?', (user_id,))
     user = c.fetchone()
     
-    # Busca materiais se o usuário for doador
     materials = []
     if user[3] == 'doador':
         c.execute('SELECT * FROM materials WHERE user_id = ?', (user_id,))
         materials = c.fetchall()
     
-    # Busca doadores próximos se o usuário for coletor
     doadores = []
     doadores_sem_localizacao = []
     if user[3] == 'coletor':
@@ -155,7 +237,7 @@ def update_location(user_id):
     conn.close()
     return render_template('update_location.html', user=user)
 
-# Rota para remover material (apenas para doadores)
+# Rota para remover material
 @app.route('/remove_material/<int:user_id>/<int:material_id>', methods=['POST'])
 def remove_material(user_id, material_id):
     if 'user_id' not in session or session['user_id'] != user_id:
@@ -178,7 +260,7 @@ def remove_material(user_id, material_id):
     flash('Material removido com sucesso!', 'success')
     return redirect(url_for('dashboard', user_id=user_id))
 
-# Rota para visualizar detalhes de um doador (apenas para coletores)
+# Rota para visualizar detalhes de um doador
 @app.route('/doador_details/<int:user_id>/<int:doador_id>')
 def doador_details(user_id, doador_id):
     if 'user_id' not in session or session['user_id'] != user_id:
@@ -195,7 +277,6 @@ def doador_details(user_id, doador_id):
         conn.close()
         return redirect(url_for('dashboard', user_id=user_id))
 
-    # Busca informações do doador
     c.execute('SELECT username, latitude, longitude FROM users WHERE id = ?', (doador_id,))
     doador = c.fetchone()
     if not doador:
@@ -203,7 +284,6 @@ def doador_details(user_id, doador_id):
         conn.close()
         return redirect(url_for('dashboard', user_id=user_id))
 
-    # Busca materiais do doador
     c.execute('SELECT material_type, quantity FROM materials WHERE user_id = ?', (doador_id,))
     materiais = c.fetchall()
     conn.close()
@@ -250,7 +330,6 @@ def show_map(user_id):
     users = c.fetchall()
     conn.close()
 
-    # Prepara dados GeoJSON para Leaflet
     geojson_data = {
         "type": "FeatureCollection",
         "features": [
@@ -258,7 +337,7 @@ def show_map(user_id):
                 "type": "Feature",
                 "geometry": {
                     "type": "Point",
-                    "coordinates": [user[3], user[2]]  # [longitude, latitude]
+                    "coordinates": [user[3], user[2]]
                 },
                 "properties": {
                     "username": user[1],
@@ -289,10 +368,9 @@ def optimize_route(user_id):
         flash('Dados de localização insuficientes para otimização de rota. Peça aos doadores para atualizarem suas localizações no painel.', 'error')
         return redirect(url_for('dashboard', user_id=user_id))
 
-    # Clustering com K-Means
     coords = np.array([(d[1], d[2]) for d in doadores])
     num_doadores = len(doadores)
-    num_clusters = max(2, min(num_doadores // 2, 3))  # Máximo de 3 ou metade dos doadores
+    num_clusters = max(2, min(num_doadores // 2, 3))
     if num_doadores < 2:
         flash('Pelo menos 2 doadores com localização são necessários para otimizar a rota.', 'error')
         return redirect(url_for('dashboard', user_id=user_id))
@@ -301,22 +379,18 @@ def optimize_route(user_id):
     labels = kmeans.labels_
     centroids = kmeans.cluster_centers_
 
-    # Agrupa doadores por cluster
     clustered_doadores = [[] for _ in range(num_clusters)]
     for idx, label in enumerate(labels):
         clustered_doadores[label].append(doadores[idx])
 
-    # Calcula a rota para cada cluster (usando os centroides)
     routes = []
     for cluster_idx, cluster in enumerate(clustered_doadores):
         if not cluster:
             continue
 
-        # Usa o centroide do cluster como ponto representativo
         cluster_coords = [(centroids[cluster_idx][0], centroids[cluster_idx][1])]
         cluster_coords.extend([(d[1], d[2]) for d in cluster])
 
-        # Matriz de distâncias
         n = len(cluster_coords)
         distance_matrix = [[0] * n for _ in range(n)]
         for i in range(n):
@@ -326,7 +400,6 @@ def optimize_route(user_id):
                     lat2, lon2 = cluster_coords[j]
                     distance_matrix[i][j] = int(((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2) ** 0.5 * 100000)
 
-        # Solucionador TSP do OR-Tools
         manager = pywrapcp.RoutingIndexManager(n, 1, 0)
         routing = pywrapcp.RoutingModel(manager)
 
@@ -346,8 +419,8 @@ def optimize_route(user_id):
             index = routing.Start(0)
             while not routing.IsEnd(index):
                 node = manager.IndexToNode(index)
-                if node != 0:  # Ignora o ponto inicial (centroide)
-                    route.append(cluster[node-1][0])  # ID do doador
+                if node != 0:
+                    route.append(cluster[node-1][0])
                 index = solution.Value(routing.NextVar(index))
             routes.append(route)
 
