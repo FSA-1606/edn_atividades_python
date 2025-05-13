@@ -11,7 +11,7 @@ Estrutura do Projeto:
 - Aula_03: Descrição do conteúdo da terceira aula.
 - Foi criado uma calculadora simples em python com validações e condicionais.
 - Foi criado um programa para calcular media de notas recebidas em python com validações e condicionais.
-Aula_04: Descrição do conteúdo da quarta aula.
+- Aula_04: Descrição do conteúdo da quarta aula.
 - Foi criado um programa para validar uma senha forte em python com validações e condicionais.
 - Foi criado um programa para contar numeros pares e impares em python com validações e condicionais.
 - Foi criado um programa para calcular valor da gorjeta em relação ao valor da conta em python com validações e condicionais.
